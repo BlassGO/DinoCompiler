@@ -194,7 +194,7 @@ with_indent(str){
 }
 with_expr(str){
    static regex_expr
-   (!regex_expr) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\((?:[^\(\)]+|(?R))*\))+)\)")
+   (!regex_expr) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)")
    _pos:=1, _extra:=0
    while,(_pos:=RegExMatch(str,regex_expr,_char,_pos+_extra))
        _char1:=with_indent(with_expr(_char1)), str:=RegExReplace(str,".{" . StrLen(_char)-3 . "}",_char1,,1,_pos+2), _extra:=StrLen(_char1)+3
@@ -202,7 +202,7 @@ with_expr(str){
 }
 read_file(file) {
    static regex_main,regex_expr
-   (!regex_main) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\((?:[^\(\)]+|(?R))*\))+)\)", regex_main:="s)([^;\s]+|;\s*[^;\s]+)\s*((?:\" . Delimiter . "[\s\S]*?\" . Delimiter . "\s*)*)")
+   (!regex_main) ? (regex_expr:="\$\(((?:[^\" . Delimiter . "\(\)]+|([\" . Delimiter . "]).*?\2|\(([^\(\)]+|(?1))*\)|(?R))+)\)", regex_main:="s)([^;\s]+|;\s*[^;\s]+)\s*((?:\" . Delimiter . "[\s\S]*?\" . Delimiter . "\s*)*)")
    InStr(FileExist(file), "A") ? dir:=dirname(file) : abort("Cant find config-->" file)
    if error
       return 0
