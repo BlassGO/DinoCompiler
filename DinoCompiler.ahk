@@ -210,11 +210,13 @@ read_file(file) {
 	if (file:=FileOpen(file, "r `n")) {
 		while (!file.AtEOF())
 		{
-         tag:=false
-			try:=trim_all(line:=StrReplace(file.ReadLine(),A_Tab,"    "))
+         tag:=false, line:=StrReplace(file.ReadLine(),A_Tab,"    ")
+         RegexMatch(line,"P)^\s+",line_indent)?(try:=RTrim(SubStr(line,line_indent+1),"`n`r" . A_Space . "`t"),line_indent:=StrLen(SubStr(line,1,line_indent))):(try:=RTrim(line,"`n`r" . A_Space . "`t"))
+         (txt!=""&&line_indent<=txt) ? txt:=""
          if (SubStr(try,1,1)=":") {
-            txt ? txt:=false
-            tag:=true, (SubStr(try,2,1)=">") ? txt:=true
+            tag:=true
+         } else if (SubStr(try,1,1)=">") {
+            txt:=line_indent, try:=StrReplace(try, A_Space)
          } else if !(txt||try) {
 	         continue
 			} else if multi_note {
@@ -233,6 +235,8 @@ read_file(file) {
          action:=""
 		   if tag {
             line:=StrReplace(try, A_Space) . "`r`n"
+         } else if txt {
+            line:=line_indent . Chr(1) . try . "`r`n"
          } else {
             ; This analysis is superficial focused on the simplification of the indentation and obtaining simple parameters.
             _pos:=1, _extra:=0, _escape:=[], _result:=[], _stringtmp:=[]

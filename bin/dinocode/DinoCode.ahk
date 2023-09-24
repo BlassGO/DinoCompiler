@@ -608,21 +608,32 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
    Loop, parse, configstr, `n,`r 
    {
       line+=1
-	  unexpected=
+	  unexpected:=_startchr:=_endchr:=is_compiled:=""
 	  FD_CURRENT:=outfd
-	  if (SubStr(A_LoopField,1,1)=":"){
-	     tag:=SubStr(A_LoopField,2)
+	  RegexMatch(A_LoopField,"^\d+(?=[\x01])",line_indent)?(read_line2:=read_line:=SubStr(A_LoopField,StrLen(line_indent)+2),is_compiled:=true):(RegexMatch(A_LoopField,"P)^\s+",line_indent)?(read_line2:=read_line:=RTrim(SubStr(A_LoopField,line_indent+1)),line_indent:=StrLen(StrReplace(SubStr(A_LoopField,1,line_indent),A_Tab,"    "))):(read_line2:=read_line:=RTrim(A_LoopField)))
+	  if !to_var.var {
+	     _startchr:=SubStr(read_line,1,2)
+	  }
+	  if (SubStr(_startchr,1,1)=":") {
+	     tag:=SubStr(read_line,2)
 		 script ? section ? (script_section[section]:=script,script:="",section:="") : section_txt ? (GLOBAL[section_txt]:=script,script:="",section_txt:="")
 		 (_def:=InStr(tag,"->")) ? (_cdef:=SubStr(tag,_def+2),tag:=SubStr(tag,1,_def-1))
-	     (SubStr(tag,1,1)=">") ? (tag:=SubStr(tag,2), section_txt:=tag) : ((tag="main") ? section:="" : section:=tag)
+	     (tag="main") ? section:="" : (tag~="^[a-zA-Z0-9_$]+$") ? section:=tag : (unexpected:="Invalid tag--->" . tag)
 		 (_def&&tag&&!unexpected) ? (((_def:=lang(,,,tag,_cdef))&&(SIGNALME.def[tag]:=true)),(_def=2) ? main_nickname:=true) : false
 		 if unexpected
 		    break
 	     else
 		    continue
-	  } else if (section||section_txt) {
-	     script.=A_LoopField . "`r`n"
-		 (line=total) ? script ? section ? (script_section[section]:=script,script:="",section:="") : section_txt ? (GLOBAL[section_txt]:=script,script:="",section_txt:="")
+	  } else if section {
+	     script.=A_LoopField . "`n"
+		 (line=total) ? (script_section[section]:=script,script:="",section:="")
+		 continue
+	  } else if (SubStr(_startchr,1,1)=">") {
+		 to_var:={var:Trim(SubStr(read_line,2)),indent:line_indent,content:""}, orig_var:=read_line2, orig_line:=line
+		 if !(to_var.var~="^[a-zA-Z_$][a-zA-Z0-9_$]*$") {
+			unexpected:="Invalid variable name--->" . to_var.var
+			break
+		 }
 		 continue
 	  } else if (Floor(SIGNALME.code)=1) {
 	     if (SIGNALME.code=1.1||(SIGNALME.code=1&&last_label&&last_label=SIGNALME[outfd].from)||(SIGNALME.code=1.2&&last_label!=SIGNALME.main[outfd]))
@@ -630,19 +641,23 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 else
 		    SIGNALME.code:=""
 	  }
-	  (line_indent:=InStr(A_LoopField,Chr(1))) ? (read_line2:=read_line:=SubStr(A_LoopField,line_indent+1), line_indent:=SubStr(A_LoopField,1,line_indent-1)) : ((read_line2:=read_line:=Trim(A_LoopField)) ? unexpected:="The statement is not yet supported by DinoCompiler (you can report it)" : false)
+      if multi_note {
+	     (_endchr="*#") ? multi_note:=false
+		 continue
+	  } else if (SubStr(_startchr,1,1)="#") {
+	     (SubStr(_startchr,2,1)="*") ? multi_note:=true
+		 continue
+	  }
 	  (!(newmain||from_type="resolve")) ? (_escape:=["`a","`b","`f","`n","`r`n","`r","`t","`v"],_result:=[],_evaluated:=[]) : newmain:=false
 	  main_type:="",main_action:="",main_orig:="",_toresolve:=[]
-	  if unexpected {
-	     break
-	  } else if block_type {
+	  if block_type {
 	     if (line_indent>block_indent) {
 		    if !block_result {
 			   last_label:=back_label
 			   continue
 			}
 			block_capture ? block_capture.="`n"
-	        block_capture.=(block_key="use") ? StrReplace(Format("{:0" . line_indent . "}",""),0,A_Space) . read_line : A_LoopField
+	        block_capture.=(block_key="use") ? StrReplace(Format("{:0" . (line_indent-block_indent)-1 . "}",""),0,A_Space) . read_line : A_LoopField
 			if (line!=total)
 		       continue
 			else
@@ -749,7 +764,9 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 }
 	  }
 	  if (config_tracking=1)&&(from_type!="resolve")&&read_line {
-		 if last_label {
+		 if to_var.var {
+			MsgBox, 262145, % "To Var--->" . to_var.var  . "   ( " . line . "/" . total . " )", % read_line
+		 } else if last_label {
 			MsgBox, 262145, % "Block Line--->" . last_label  . "   ( " . line . "/" . total . " )", % read_line
 		 } else {
 			MsgBox, 262145, % "Main Line   ( " . line . "/" . total . " )", % read_line
@@ -784,7 +801,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 	  StringCaseSense, Off
 	  _pos:=1, _extra:=0
 	  while,(_pos:=RegExMatch(read_line,regex_expr,_char,_pos+_extra))
-		 _result.Push(_char), _max:=_result.MaxIndex(), _toresolve.Push(_max), _max:="[``_" . _max . "_``]", read_line:=RegExReplace(read_line,".{" . StrLen(_char) . "}",_max,,1,_pos), _extra:=StrLen(_max)
+	     _result.Push(_char), _max:=_result.MaxIndex(), _toresolve.Push(_max), _max:="[``_" . _max . "_``]", read_line:=RegExReplace(read_line,".{" . StrLen(_char) . "}",_max,,1,_pos), _extra:=StrLen(_max)
 	  _pos:=1, _extra:=0
 	  while,(_pos:=InStr(read_line,"%",,_pos+_extra))
 	  {
@@ -817,6 +834,28 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 			 break
 		  }
 	  }
+	  if to_var.var {
+	     if (line_indent>to_var.indent) {
+			(to_var.content) ? to_var.content.="`n"
+            to_var.content.=StrReplace(Format("{:0" . (line_indent-to_var.indent)-1 . "}",""),0,A_Space) . solve_escape(solve_escape(read_line, _escape), _evaluated, "~")
+			if (line!=total)
+		       continue
+			else
+			   last_line_on_var:=true
+		 }
+		 if to_var.content {
+            FD[outfd][to_var.var]:=to_var.content
+		 } else {
+			unexpected:="At least one line was expected for the variable--->" .  to_var.var
+			last_label:=back_label,read_line2:=orig_var,line:=orig_line
+			break
+		 }
+		 to_var:=""
+		 if last_line_on_var {
+		    last_line_on_var:=false
+		    continue
+		 }
+      }
 	  RegExMatch(read_line, "^(\S+)\s*", condition)
 	  if (condition1&&block_key:=lang(,condition1,,"condition")) {
 		 block_capture:="", block_indent:=line_indent, block_type:=condition1, block_with:=SubStr(read_line,StrLen(condition)+1), orig_block:=read_line2, orig_line:=line
@@ -905,7 +944,7 @@ load_config(configstr:="",local:=false,local_obj:="",from_fd:=0,from_type:="",ne
 		 if (option!="") {
 			back_opt:=option, overwrite:=true, _expand:="", _literal:="", _number:="", _var:="", _var1:="", _var2:="", _var3:=""
 			if (_pos=1) {
-				if with_partial {
+			    if with_partial {
                     main_action:=with_partial, option:=main_action, maps:=maps(main_action)
 			    } else if (SubStr(option,1,3)="[``_")||((_chr:=SubStr(option,-1))&&(_chr="++"||_chr="--")) {
 				    just_one:=true, _chr ? (_var:=SubStr(option,1,-2)) ? FD[outfd].HasKey(_var) ? (((_chr="++") ? FD[outfd][_var]++ : FD[outfd][_var]--),to_return:=FD[outfd][_var])
